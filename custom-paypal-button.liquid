@@ -1,0 +1,142 @@
+        {%- if additional_checkout_buttons -%}
+          {%- capture all_buttons_json -%}
+            {{ content_for_additional_checkout_buttons | json }}
+          {%- endcapture -%}
+
+          {%- assign paypal_button_config = all_buttons_json
+            | replace: '\u0026quot;', '"'
+            | replace: '\u0026', '&'
+            | replace: '\u003c', '<'
+            | replace: '\u003e', '>'
+            | replace: '\&quot;', '"'
+            | replace: '&amp;', '&'
+            | replace: '\&', '&'
+            | replace: '\ ', '\'
+            | replace: '\/', '/'
+            | split: '{"name":"paypal",'
+            | last
+            | prepend: '{"name":"paypal",'
+            | split: ',{"name"'
+            | first
+          -%}
+          <div class="cart__dynamic-checkout-buttons additional-checkout-buttons">
+            <div class="dynamic-checkout__content" id="dynamic-checkout-cart" data-shopify="dynamic-checkout-cart" data-total-price="{{ cart.total_price | plus: 4999 | money_without_currency }}" data-currency="{{ cart.currency.symbol }}">
+              <shopify-accelerated-checkout-cart wallet-configs='[{{ paypal_button_config }}]'></shopify-accelerated-checkout-cart>
+            </div>
+            <div id="paypal-button-container"></div>
+
+          </div>
+        {%- endif -%}
+        <script>
+        document.addEventListener("DOMContentLoaded", function () {
+          let paypalScriptLoaded = false; // Prevent multiple script loads
+        
+          function loadPayPalButton() {
+            const checkoutContainer = document.getElementById("dynamic-checkout-cart");
+            if (!checkoutContainer) {
+              console.error("Checkout container not found.");
+              return;
+            }
+        
+            const walletConfigElement = checkoutContainer.querySelector("shopify-accelerated-checkout-cart");
+            if (!walletConfigElement) {
+              console.error("Wallet config element not found.");
+              return;
+            }
+        
+            const walletConfigs = JSON.parse(walletConfigElement.getAttribute("wallet-configs") || "[]");
+            const paypalConfig = walletConfigs.find((config) => config.name === "paypal");
+        
+            if (!paypalConfig || !paypalConfig.wallet_params) {
+              console.error("PayPal configuration not found in wallet configs.");
+              return;
+            }
+        
+            const sdkUrl = paypalConfig.wallet_params.sdkUrl;
+        
+            if (!paypalScriptLoaded) {
+              paypalScriptLoaded = true; // Mark script as loaded
+        
+              // Load PayPal SDK
+              const script = document.createElement("script");
+              script.src = sdkUrl;
+              script.onload = function () {
+                renderPayPalButton();
+              };
+              script.onerror = function () {
+                console.error("Failed to load PayPal SDK script.");
+              };
+              document.head.appendChild(script);
+            } else {
+              renderPayPalButton(); // If script is already loaded, just render button
+            }
+          }
+        
+          function renderPayPalButton() {
+            const paypalContainer = document.getElementById("paypal-button-container");
+            if (!paypalContainer) {
+              console.error("PayPal button container not found.");
+              return;
+            }
+        
+            paypalContainer.innerHTML = ""; // Clear existing button
+        
+            if (paypal && paypal.Buttons) {
+              paypal
+                .Buttons({
+                  style: {
+                    layout: "horizontal",
+                    tagline: false,
+                  },
+                  createOrder: function (data, actions) {
+                    const checkoutContainer = document.getElementById("dynamic-checkout-cart");
+                    if (!checkoutContainer) return;
+                    const totalPrice = checkoutContainer.getAttribute("data-total-price").replace(",", "");
+                    return actions.order.create({
+                      purchase_units: [
+                        {
+                          amount: {
+                            value: totalPrice,
+                          },
+                        },
+                      ],
+                    });
+                  },
+                  onApprove: function (data, actions) {
+                    return actions.order.capture().then(function (details) {
+                      alert(`Transaction completed by ${details.payer.name.given_name}`);
+                    });
+                  },
+                  onError: function (err) {
+                    console.error("PayPal Button Error:", err);
+                  },
+                })
+                .render("#paypal-button-container");
+            } else {
+              console.error("PayPal SDK or Buttons component is not available.");
+            }
+          }
+        
+          // Initial load
+          setTimeout(() => {
+            loadPayPalButton();
+          }, 1000);
+        
+          // Event listener for cart updates
+          document.addEventListener("cart:updated", function (event) {
+            const itemCount = event.detail.itemCount;
+            console.log('itemCount '+itemCount);
+            const paypalContainer = document.getElementById("paypal-button-container");
+        
+            if (paypalContainer) {
+              paypalContainer.innerHTML = ""; // Clear existing button
+            }
+        
+            setTimeout(() => {
+              if (itemCount > 0) {
+                loadPayPalButton();
+              }
+            }, 1200);
+          });
+        });
+        </script>
